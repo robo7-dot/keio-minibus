@@ -1,6 +1,6 @@
 // オフライン用 Service Worker
 // アプリ本体はキャッシュ優先、時刻表 JSON はネット優先（失敗時にキャッシュ）
-const CACHE = "kaidori-bus-v2";
+const CACHE = "kaidori-bus-v3";
 const SHELL = ["./", "index.html", "manifest.json", "icon-192.png", "icon-512.png", "icon-180.png"];
 
 self.addEventListener("install", e => {
