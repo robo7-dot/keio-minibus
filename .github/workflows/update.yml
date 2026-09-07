@@ -1,0 +1,50 @@
+name: 時刻表を更新
+
+on:
+  schedule:
+    # 毎日 JST 05:00（UTC 20:00）。改正当日の朝には反映される
+    - cron: "0 20 * * *"
+  workflow_dispatch:      # Actions 画面の「Run workflow」で手動実行もできる
+
+permissions:
+  contents: write         # 生成した JSON をコミットするため
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: リポジトリを取得
+        uses: actions/checkout@v4
+
+      - name: Python を用意
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: ODPT から GTFS zip をダウンロード
+        env:
+          ODPT_GTFS_URL: ${{ secrets.ODPT_GTFS_URL }}   # トークン込みのダウンロード URL
+        run: |
+          if [ -z "$ODPT_GTFS_URL" ]; then
+            echo "::error::Secret ODPT_GTFS_URL が設定されていません"; exit 1
+          fi
+          curl -sSL --fail --retry 3 -o keio_bus.zip "$ODPT_GTFS_URL"
+          ls -la keio_bus.zip
+          unzip -l keio_bus.zip | head -20
+
+      - name: 8 方向分を抽出して JSON を生成
+        run: python3 scripts/extract.py keio_bus.zip
+
+      - name: 変更があればコミット
+        run: |
+          # generated_at だけが変わる場合はコミットしない（時刻以外の差分を見る）
+          if git diff --quiet -I '"generated_at"' -- data/timetable.json; then
+            echo "時刻表に変更はありません"
+            git checkout -- data/timetable.json
+            exit 0
+          fi
+          git config user.name  "timetable-bot"
+          git config user.email "timetable-bot@users.noreply.github.com"
+          git add data/timetable.json
+          git commit -m "時刻表を更新 ($(date -u +%Y-%m-%d))"
+          git push
