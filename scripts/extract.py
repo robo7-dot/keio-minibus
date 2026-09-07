@@ -28,14 +28,15 @@ from pathlib import Path
 # 「ケ」「ヶ」の揺れは normalize() で吸収する。
 # ---------------------------------------------------------------------------
 DIRECTIONS = [
-    {"id": "kaidori_park_to_nagayama",   "origin": "貝取北公園通り", "dest": "永山駅",       "group": "貝取北公園通り ⇄ 永山駅"},
-    {"id": "nagayama_to_kaidori_park",   "origin": "永山駅",         "dest": "貝取北公園通り", "group": "貝取北公園通り ⇄ 永山駅"},
-    {"id": "kaidori_park_to_tamacenter", "origin": "貝取北公園通り", "dest": "多摩センター駅", "group": "貝取北公園通り ⇄ 多摩センター駅"},
-    {"id": "tamacenter_to_kaidori_park", "origin": "多摩センター駅", "dest": "貝取北公園通り", "group": "貝取北公園通り ⇄ 多摩センター駅"},
-    {"id": "kaidori_center_to_seiseki",  "origin": "貝取北センター", "dest": "聖蹟桜ヶ丘駅", "group": "貝取北センター ⇄ 聖蹟桜ヶ丘駅"},
-    {"id": "seiseki_to_kaidori_center",  "origin": "聖蹟桜ヶ丘駅",   "dest": "貝取北センター", "group": "貝取北センター ⇄ 聖蹟桜ヶ丘駅"},
-    {"id": "minami_kaidori_to_seiseki",  "origin": "南貝取",         "dest": "聖蹟桜ヶ丘駅", "group": "南貝取 ⇄ 聖蹟桜ヶ丘駅"},
-    {"id": "seiseki_to_minami_kaidori",  "origin": "聖蹟桜ヶ丘駅",   "dest": "南貝取",       "group": "南貝取 ⇄ 聖蹟桜ヶ丘駅"},
+    # station: 画面の見出しになる駅。role: out=家から駅へ / home=駅から家へ
+    {"id": "kaidori_park_to_nagayama",   "origin": "貝取北公園通り", "dest": "永山駅",       "station": "永山駅",       "role": "out"},
+    {"id": "nagayama_to_kaidori_park",   "origin": "永山駅",         "dest": "貝取北公園通り", "station": "永山駅",       "role": "home"},
+    {"id": "kaidori_park_to_tamacenter", "origin": "貝取北公園通り", "dest": "多摩センター駅", "station": "多摩センター駅", "role": "out"},
+    {"id": "tamacenter_to_kaidori_park", "origin": "多摩センター駅", "dest": "貝取北公園通り", "station": "多摩センター駅", "role": "home"},
+    {"id": "kaidori_center_to_seiseki",  "origin": "貝取北センター", "dest": "聖蹟桜ヶ丘駅", "station": "聖蹟桜ヶ丘駅", "role": "out"},
+    {"id": "seiseki_to_kaidori_center",  "origin": "聖蹟桜ヶ丘駅",   "dest": "貝取北センター", "station": "聖蹟桜ヶ丘駅", "role": "home"},
+    {"id": "minami_kaidori_to_seiseki",  "origin": "南貝取",         "dest": "聖蹟桜ヶ丘駅", "station": "聖蹟桜ヶ丘駅", "role": "out"},
+    {"id": "seiseki_to_minami_kaidori",  "origin": "聖蹟桜ヶ丘駅",   "dest": "南貝取",       "station": "聖蹟桜ヶ丘駅", "role": "home"},
 ]
 
 OUTPUT = Path(__file__).resolve().parent.parent / "data" / "timetable.json"
@@ -112,6 +113,7 @@ def main() -> int:
         return ids
 
     route_by_id = {r["route_id"]: r for r in routes}
+    platform_by_stop = {s["stop_id"]: (s.get("platform_code") or "").lstrip("0") or s.get("platform_code", "") for s in stops}
     trip_by_id = {t["trip_id"]: t for t in trips}
 
     # trip_id → その便の停車列（stop_sequence 順）
@@ -157,6 +159,7 @@ def main() -> int:
                 "d": hhmmss_to_minutes(arr) - hhmmss_to_minutes(dep),  # 所要時間（分）
                 "r": route_name,                                # 系統
                 "h": trip.get("trip_headsign", ""),             # 行先
+                "p": platform_by_stop.get(origin_row["stop_id"], ""),  # 出発停留所の乗り場番号
             })
 
         # 循環路線の「遠回り」を除く。
