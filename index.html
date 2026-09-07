@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>貝取 バス発車案内</title>
+<meta name="description" content="貝取周辺 8 方向の次のバスを表示する個人用アプリ">
+<meta name="theme-color" content="#1B2740">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="貝取バス">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<style>
+  :root {
+    --bg: #EEF1F6;
+    --card: #FFFFFF;
+    --ink: #1B2740;
+    --ink-2: #4A5568;
+    --muted: #8A94A6;
+    --line: #DCE1EA;
+    --soon: #C8143F;       /* 京王バスの赤に寄せた「まもなく」色 */
+    --soon-bg: #FBE9EE;
+    --now: #1B2740;
+    --radius: 14px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12161F; --card: #1C2230; --ink: #F1F4F9; --ink-2: #C3CAD6;
+      --muted: #7E8898; --line: #2C3444; --soon: #FF5C7C; --soon-bg: #3A1A24;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); }
+  body {
+    font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", system-ui, sans-serif;
+    font-feature-settings: "tnum" 1, "palt" 1;
+    line-height: 1.4;
+    padding: max(12px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+             max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    -webkit-user-select: none; user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* ---------- ヘッダー ---------- */
+  header {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+    flex-wrap: wrap; margin: 4px 4px 14px;
+  }
+  .clock { font-size: 44px; font-weight: 700; letter-spacing: 0.01em; line-height: 1; }
+  .clock small { font-size: 18px; font-weight: 500; color: var(--ink-2); margin-left: 10px; }
+  .daytype { display: flex; gap: 6px; align-items: center; }
+  .daytype button {
+    font: inherit; font-size: 15px; padding: 8px 14px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--card); color: var(--ink-2); cursor: pointer;
+  }
+  .daytype button[aria-pressed="true"] { background: var(--ink); color: var(--card); border-color: var(--ink); }
+  .daytype button:focus-visible { outline: 3px solid #5B8DEF; outline-offset: 2px; }
+
+  /* ---------- お知らせ帯 ---------- */
+  .notice {
+    margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; font-size: 15px;
+    background: #FFF4D6; color: #5A4200; border: 1px solid #F1D48A;
+  }
+  .notice.bad { background: var(--soon-bg); color: var(--soon); border-color: transparent; }
+  .notice:empty { display: none; }
+
+  /* ---------- 発車ボード ---------- */
+  .board { display: grid; gap: 14px; grid-template-columns: 1fr; }
+  @media (min-width: 700px) { .board { grid-template-columns: 1fr 1fr; } }
+  .group { display: contents; }
+  .card {
+    background: var(--card); border-radius: var(--radius); padding: 16px 18px 14px;
+    border: 1px solid var(--line); cursor: pointer; text-align: left; width: 100%;
+    font: inherit; color: inherit; display: grid; grid-template-columns: 1fr auto; gap: 6px 12px;
+    align-items: end; min-height: 128px;
+  }
+  .card:focus-visible { outline: 3px solid #5B8DEF; outline-offset: 2px; }
+  .card:active { transform: scale(0.99); }
+  .card .route { grid-column: 1 / -1; font-size: 17px; color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
+  .card .route b { color: var(--ink); font-weight: 600; }
+  .card .route .arrow { color: var(--muted); }
+  .card .next { font-size: 52px; font-weight: 700; line-height: 1; letter-spacing: 0.01em; }
+  .card .next .line { display: inline-block; font-size: 14px; font-weight: 500; color: var(--card);
+    background: var(--ink-2); border-radius: 6px; padding: 3px 7px; vertical-align: 14px; margin-left: 8px; }
+  .card .wait { font-size: 22px; font-weight: 600; text-align: right; color: var(--ink-2); white-space: nowrap; }
+  .card .wait b { font-size: 40px; font-weight: 700; color: var(--ink); line-height: 1; }
+  .card.soon .wait b, .card.soon .next { color: var(--soon); }
+  .card .after { grid-column: 1 / -1; font-size: 17px; color: var(--muted); margin-top: 2px; }
+  .card .after span + span::before { content: "／"; color: var(--line); margin: 0 6px; }
+  .card.none .next { font-size: 24px; font-weight: 500; color: var(--muted); align-self: center; }
+
+  /* ---------- フッター ---------- */
+  footer { margin: 18px 4px 0; font-size: 13px; color: var(--muted); display: flex; gap: 14px; flex-wrap: wrap; }
+  footer button { font: inherit; font-size: 13px; background: none; border: 0; color: var(--ink-2); text-decoration: underline; cursor: pointer; padding: 0; }
+
+  /* ---------- 全日時刻表（ダイアログ） ---------- */
+  dialog {
+    border: 0; border-radius: 18px; padding: 0; width: min(680px, 92vw); max-height: 86vh;
+    background: var(--card); color: var(--ink); box-shadow: 0 20px 60px rgba(0,0,0,.25);
+  }
+  dialog::backdrop { background: rgba(10,14,24,.55); }
+  .dlg-head { display: flex; justify-content: space-between; align-items: center; padding: 18px 22px 12px; border-bottom: 1px solid var(--line); }
+  .dlg-head h2 { margin: 0; font-size: 20px; font-weight: 600; }
+  .dlg-head small { display: block; color: var(--muted); font-size: 14px; font-weight: 400; margin-top: 2px; }
+  .dlg-head button { font: inherit; font-size: 16px; border: 0; background: var(--bg); color: var(--ink); border-radius: 999px; padding: 8px 14px; cursor: pointer; }
+  .dlg-body { overflow: auto; padding: 8px 22px 22px; max-height: calc(86vh - 70px); }
+  .hour { display: grid; grid-template-columns: 44px 1fr; gap: 8px 12px; padding: 8px 0; border-bottom: 1px solid var(--line); align-items: baseline; }
+  .hour .h { font-size: 20px; font-weight: 700; color: var(--ink-2); }
+  .hour .m { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 20px; }
+  .hour .m span { position: relative; }
+  .hour .m span.past { color: var(--muted); }
+  .hour .m span.next { color: var(--soon); font-weight: 700; }
+  .hour .m span i { font-style: normal; font-size: 11px; color: var(--muted); margin-left: 2px; vertical-align: top; }
+
+  @media (prefers-reduced-motion: reduce) { .card:active { transform: none; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="clock" id="clock">--:--<small id="dateLabel"></small></div>
+  <div class="daytype" role="group" aria-label="ダイヤの種類">
+    <button data-mode="auto" aria-pressed="true">今日</button>
+    <button data-mode="weekday" aria-pressed="false">平日</button>
+    <button data-mode="saturday" aria-pressed="false">土曜</button>
+    <button data-mode="holiday" aria-pressed="false">日祝</button>
+  </div>
+</header>
+
+<div class="notice" id="notice"></div>
+
+<main class="board" id="board" aria-live="polite"></main>
+
+<footer>
+  <span id="dataInfo">時刻表を読み込んでいます…</span>
+  <button id="reload" type="button">時刻表を再取得</button>
+</footer>
+
+<dialog id="dlg">
+  <div class="dlg-head">
+    <h2 id="dlgTitle">時刻表<small id="dlgSub"></small></h2>
+    <button type="button" id="dlgClose">閉じる</button>
+  </div>
+  <div class="dlg-body" id="dlgBody"></div>
+</dialog>
+
+<!-- 通信できない初回起動などのための最終フォールバック（サンプルデータ） -->
+<script id="fallback" type="application/json">{"generated_at":"2026-09-02T12:00:00+09:00","source":"サンプル（実在のダイヤではありません）","feed_version":"sample","valid_until":"20261231","sample":true,"services":{"weekday":{"days":[1,1,1,1,1,0,0],"start":"20260901","end":"20261231","add":[],"remove":["20260921","20260922","20260923","20261012","20261103","20261123"]},"saturday":{"days":[0,0,0,0,0,1,0],"start":"20260901","end":"20261231","add":[],"remove":[]},"holiday":{"days":[0,0,0,0,0,0,1],"start":"20260901","end":"20261231","add":["20260921","20260922","20260923","20261012","20261103","20261123"],"remove":[]}},"directions":[{"id":"kaidori_park_to_nagayama","origin":"貝取北公園通り","dest":"永山駅","group":"貝取北公園通り ⇄ 永山駅","trips":[{"s":"weekday","t":360,"r":"東西線","h":"永山駅"},{"s":"weekday","t":390,"r":"東西線","h":"永山駅"},{"s":"weekday","t":420,"r":"東西線","h":"永山駅"},{"s":"weekday","t":450,"r":"東西線","h":"永山駅"},{"s":"weekday","t":480,"r":"東西線","h":"永山駅"},{"s":"weekday","t":510,"r":"東西線","h":"永山駅"},{"s":"weekday","t":540,"r":"東西線","h":"永山駅"},{"s":"weekday","t":570,"r":"東西線","h":"永山駅"},{"s":"weekday","t":600,"r":"東西線","h":"永山駅"},{"s":"weekday","t":630,"r":"東西線","h":"永山駅"},{"s":"weekday","t":660,"r":"東西線","h":"永山駅"},{"s":"weekday","t":690,"r":"東西線","h":"永山駅"},{"s":"weekday","t":720,"r":"東西線","h":"永山駅"},{"s":"weekday","t":750,"r":"東西線","h":"永山駅"},{"s":"weekday","t":780,"r":"東西線","h":"永山駅"},{"s":"weekday","t":810,"r":"東西線","h":"永山駅"},{"s":"weekday","t":840,"r":"東西線","h":"永山駅"},{"s":"weekday","t":870,"r":"東西線","h":"永山駅"},{"s":"weekday","t":900,"r":"東西線","h":"永山駅"},{"s":"weekday","t":930,"r":"東西線","h":"永山駅"},{"s":"weekday","t":960,"r":"東西線","h":"永山駅"},{"s":"weekday","t":990,"r":"東西線","h":"永山駅"},{"s":"weekday","t":1020,"r":"東西線","h":"永山駅"},{"s":"weekday","t":1050,"r":"東西線","h":"永山駅"},{"s":"weekday","t":1080,"r":"東西線","h":"永山駅"},{"s":"weekday","t":1110,"r":"東西線","h":"永山駅"},{"s":"weekday","t":1140,"r":"東西線","h":"永山駅"},{"s":"weekday","t":1170,"r":"東西線","h":"永山駅"},{"s":"weekday","t":1200,"r":"東西線","h":"永山駅"},{"s":"weekday","t":1230,"r":"東西線","h":"永山駅"},{"s":"weekday","t":1260,"r":"東西線","h":"永山駅"},{"s":"weekday","t":1290,"r":"東西線","h":"永山駅"},{"s":"saturday","t":360,"r":"東西線","h":"永山駅"},{"s":"saturday","t":400,"r":"東西線","h":"永山駅"},{"s":"saturday","t":440,"r":"東西線","h":"永山駅"},{"s":"saturday","t":480,"r":"東西線","h":"永山駅"},{"s":"saturday","t":520,"r":"東西線","h":"永山駅"},{"s":"saturday","t":560,"r":"東西線","h":"永山駅"},{"s":"saturday","t":600,"r":"東西線","h":"永山駅"},{"s":"saturday","t":640,"r":"東西線","h":"永山駅"},{"s":"saturday","t":680,"r":"東西線","h":"永山駅"},{"s":"saturday","t":720,"r":"東西線","h":"永山駅"},{"s":"saturday","t":760,"r":"東西線","h":"永山駅"},{"s":"saturday","t":800,"r":"東西線","h":"永山駅"},{"s":"saturday","t":840,"r":"東西線","h":"永山駅"},{"s":"saturday","t":880,"r":"東西線","h":"永山駅"},{"s":"saturday","t":920,"r":"東西線","h":"永山駅"},{"s":"saturday","t":960,"r":"東西線","h":"永山駅"},{"s":"saturday","t":1000,"r":"東西線","h":"永山駅"},{"s":"saturday","t":1040,"r":"東西線","h":"永山駅"},{"s":"saturday","t":1080,"r":"東西線","h":"永山駅"},{"s":"saturday","t":1120,"r":"東西線","h":"永山駅"},{"s":"saturday","t":1160,"r":"東西線","h":"永山駅"},{"s":"saturday","t":1200,"r":"東西線","h":"永山駅"},{"s":"saturday","t":1240,"r":"東西線","h":"永山駅"},{"s":"saturday","t":1280,"r":"東西線","h":"永山駅"},{"s":"holiday","t":360,"r":"東西線","h":"永山駅"},{"s":"holiday","t":420,"r":"東西線","h":"永山駅"},{"s":"holiday","t":480,"r":"東西線","h":"永山駅"},{"s":"holiday","t":540,"r":"東西線","h":"永山駅"},{"s":"holiday","t":600,"r":"東西線","h":"永山駅"},{"s":"holiday","t":660,"r":"東西線","h":"永山駅"},{"s":"holiday","t":720,"r":"東西線","h":"永山駅"},{"s":"holiday","t":780,"r":"東西線","h":"永山駅"},{"s":"holiday","t":840,"r":"東西線","h":"永山駅"},{"s":"holiday","t":900,"r":"東西線","h":"永山駅"},{"s":"holiday","t":960,"r":"東西線","h":"永山駅"},{"s":"holiday","t":1020,"r":"東西線","h":"永山駅"},{"s":"holiday","t":1080,"r":"東西線","h":"永山駅"},{"s":"holiday","t":1140,"r":"東西線","h":"永山駅"},{"s":"holiday","t":1200,"r":"東西線","h":"永山駅"},{"s":"holiday","t":1260,"r":"東西線","h":"永山駅"}]},{"id":"nagayama_to_kaidori_park","origin":"永山駅","dest":"貝取北公園通り","group":"貝取北公園通り ⇄ 永山駅","trips":[{"s":"weekday","t":367,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":397,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":427,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":457,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":487,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":517,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":547,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":577,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":607,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":637,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":667,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":697,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":727,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":757,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":787,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":817,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":847,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":877,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":907,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":937,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":967,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":997,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":1027,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":1057,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":1087,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":1117,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":1147,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":1177,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":1207,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":1237,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":1267,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":1297,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":367,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":407,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":447,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":487,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":527,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":567,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":607,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":647,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":687,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":727,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":767,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":807,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":847,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":887,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":927,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":967,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":1007,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":1047,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":1087,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":1127,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":1167,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":1207,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":1247,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":1287,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":367,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":427,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":487,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":547,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":607,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":667,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":727,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":787,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":847,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":907,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":967,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":1027,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":1087,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":1147,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":1207,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":1267,"r":"東西線","h":"多摩センター駅"}]},{"id":"kaidori_park_to_tamacenter","origin":"貝取北公園通り","dest":"多摩センター駅","group":"貝取北公園通り ⇄ 多摩センター駅","trips":[{"s":"weekday","t":374,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":404,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":434,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":464,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":494,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":524,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":554,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":584,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":614,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":644,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":674,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":704,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":734,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":764,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":794,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":824,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":854,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":884,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":914,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":944,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":974,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":1004,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":1034,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":1064,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":1094,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":1124,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":1154,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":1184,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":1214,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":1244,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":1274,"r":"東西線","h":"多摩センター駅"},{"s":"weekday","t":1304,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":374,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":414,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":454,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":494,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":534,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":574,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":614,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":654,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":694,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":734,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":774,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":814,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":854,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":894,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":934,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":974,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":1014,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":1054,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":1094,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":1134,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":1174,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":1214,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":1254,"r":"東西線","h":"多摩センター駅"},{"s":"saturday","t":1294,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":374,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":434,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":494,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":554,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":614,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":674,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":734,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":794,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":854,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":914,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":974,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":1034,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":1094,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":1154,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":1214,"r":"東西線","h":"多摩センター駅"},{"s":"holiday","t":1274,"r":"東西線","h":"多摩センター駅"}]},{"id":"tamacenter_to_kaidori_park","origin":"多摩センター駅","dest":"貝取北公園通り","group":"貝取北公園通り ⇄ 多摩センター駅","trips":[{"s":"weekday","t":381,"r":"東西線","h":"永山駅"},{"s":"weekday","t":411,"r":"東西線","h":"永山駅"},{"s":"weekday","t":441,"r":"東西線","h":"永山駅"},{"s":"weekday","t":471,"r":"東西線","h":"永山駅"},{"s":"weekday","t":501,"r":"東西線","h":"永山駅"},{"s":"weekday","t":531,"r":"東西線","h":"永山駅"},{"s":"weekday","t":561,"r":"東西線","h":"永山駅"},{"s":"weekday","t":591,"r":"東西線","h":"永山駅"},{"s":"weekday","t":621,"r":"東西線","h":"永山駅"},{"s":"weekday","t":651,"r":"東西線","h":"永山駅"},{"s":"weekday","t":681,"r":"東西線","h":"永山駅"},{"s":"weekday","t":711,"r":"東西線","h":"永山駅"},{"s":"weekday","t":741,"r":"東西線","h":"永山駅"},{"s":"weekday","t":771,"r":"東西線","h":"永山駅"},{"s":"weekday","t":801,"r":"東西線","h":"永山駅"},{"s":"weekday","t":831,"r":"東西線","h":"永山駅"},{"s":"weekday","t":861,"r":"東西線","h":"永山駅"},{"s":"weekday","t":891,"r":"東西線","h":"永山駅"},{"s":"weekday","t":921,"r":"東西線","h":"永山駅"},{"s":"weekday","t":951,"r":"東西線","h":"永山駅"},{"s":"weekday","t":981,"r":"東西線","h":"永山駅"},{"s":"weekday","t":1011,"r":"東西線","h":"永山駅"},{"s":"weekday","t":1041,"r":"東西線","h":"永山駅"},{"s":"weekday","t":1071,"r":"東西線","h":"永山駅"},{"s":"weekday","t":1101,"r":"東西線","h":"永山駅"},{"s":"weekday","t":1131,"r":"東西線","h":"永山駅"},{"s":"weekday","t":1161,"r":"東西線","h":"永山駅"},{"s":"weekday","t":1191,"r":"東西線","h":"永山駅"},{"s":"weekday","t":1221,"r":"東西線","h":"永山駅"},{"s":"weekday","t":1251,"r":"東西線","h":"永山駅"},{"s":"weekday","t":1281,"r":"東西線","h":"永山駅"},{"s":"weekday","t":1311,"r":"東西線","h":"永山駅"},{"s":"saturday","t":381,"r":"東西線","h":"永山駅"},{"s":"saturday","t":421,"r":"東西線","h":"永山駅"},{"s":"saturday","t":461,"r":"東西線","h":"永山駅"},{"s":"saturday","t":501,"r":"東西線","h":"永山駅"},{"s":"saturday","t":541,"r":"東西線","h":"永山駅"},{"s":"saturday","t":581,"r":"東西線","h":"永山駅"},{"s":"saturday","t":621,"r":"東西線","h":"永山駅"},{"s":"saturday","t":661,"r":"東西線","h":"永山駅"},{"s":"saturday","t":701,"r":"東西線","h":"永山駅"},{"s":"saturday","t":741,"r":"東西線","h":"永山駅"},{"s":"saturday","t":781,"r":"東西線","h":"永山駅"},{"s":"saturday","t":821,"r":"東西線","h":"永山駅"},{"s":"saturday","t":861,"r":"東西線","h":"永山駅"},{"s":"saturday","t":901,"r":"東西線","h":"永山駅"},{"s":"saturday","t":941,"r":"東西線","h":"永山駅"},{"s":"saturday","t":981,"r":"東西線","h":"永山駅"},{"s":"saturday","t":1021,"r":"東西線","h":"永山駅"},{"s":"saturday","t":1061,"r":"東西線","h":"永山駅"},{"s":"saturday","t":1101,"r":"東西線","h":"永山駅"},{"s":"saturday","t":1141,"r":"東西線","h":"永山駅"},{"s":"saturday","t":1181,"r":"東西線","h":"永山駅"},{"s":"saturday","t":1221,"r":"東西線","h":"永山駅"},{"s":"saturday","t":1261,"r":"東西線","h":"永山駅"},{"s":"saturday","t":1301,"r":"東西線","h":"永山駅"},{"s":"holiday","t":381,"r":"東西線","h":"永山駅"},{"s":"holiday","t":441,"r":"東西線","h":"永山駅"},{"s":"holiday","t":501,"r":"東西線","h":"永山駅"},{"s":"holiday","t":561,"r":"東西線","h":"永山駅"},{"s":"holiday","t":621,"r":"東西線","h":"永山駅"},{"s":"holiday","t":681,"r":"東西線","h":"永山駅"},{"s":"holiday","t":741,"r":"東西線","h":"永山駅"},{"s":"holiday","t":801,"r":"東西線","h":"永山駅"},{"s":"holiday","t":861,"r":"東西線","h":"永山駅"},{"s":"holiday","t":921,"r":"東西線","h":"永山駅"},{"s":"holiday","t":981,"r":"東西線","h":"永山駅"},{"s":"holiday","t":1041,"r":"東西線","h":"永山駅"},{"s":"holiday","t":1101,"r":"東西線","h":"永山駅"},{"s":"holiday","t":1161,"r":"東西線","h":"永山駅"},{"s":"holiday","t":1221,"r":"東西線","h":"永山駅"},{"s":"holiday","t":1281,"r":"東西線","h":"永山駅"}]},{"id":"kaidori_center_to_seiseki","origin":"貝取北センター","dest":"聖蹟桜ヶ丘駅","group":"貝取北センター ⇄ 聖蹟桜ヶ丘駅","trips":[{"s":"weekday","t":388,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":418,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":448,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":478,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":508,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":538,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":568,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":598,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":628,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":658,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":688,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":718,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":748,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":778,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":808,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":838,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":868,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":898,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":928,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":958,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":988,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":1018,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":1048,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":1078,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":1108,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":1138,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":1168,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":1198,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":1228,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":1258,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":1288,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":1318,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":388,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":428,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":468,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":508,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":548,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":588,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":628,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":668,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":708,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":748,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":788,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":828,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":868,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":908,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":948,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":988,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":1028,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":1068,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":1108,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":1148,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":1188,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":1228,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":1268,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":1308,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":388,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":448,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":508,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":568,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":628,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":688,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":748,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":808,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":868,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":928,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":988,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":1048,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":1108,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":1168,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":1228,"r":"桜46","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":1288,"r":"桜46","h":"聖蹟桜ヶ丘駅"}]},{"id":"seiseki_to_kaidori_center","origin":"聖蹟桜ヶ丘駅","dest":"貝取北センター","group":"貝取北センター ⇄ 聖蹟桜ヶ丘駅","trips":[{"s":"weekday","t":365,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":395,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":425,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":455,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":485,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":515,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":545,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":575,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":605,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":635,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":665,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":695,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":725,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":755,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":785,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":815,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":845,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":875,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":905,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":935,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":965,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":995,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":1025,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":1055,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":1085,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":1115,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":1145,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":1175,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":1205,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":1235,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":1265,"r":"桜46","h":"多摩センター駅"},{"s":"weekday","t":1295,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":365,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":405,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":445,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":485,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":525,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":565,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":605,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":645,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":685,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":725,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":765,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":805,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":845,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":885,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":925,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":965,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":1005,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":1045,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":1085,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":1125,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":1165,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":1205,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":1245,"r":"桜46","h":"多摩センター駅"},{"s":"saturday","t":1285,"r":"桜46","h":"多摩センター駅"},{"s":"holiday","t":365,"r":"桜46","h":"多摩センター駅"},{"s":"holiday","t":425,"r":"桜46","h":"多摩センター駅"},{"s":"holiday","t":485,"r":"桜46","h":"多摩センター駅"},{"s":"holiday","t":545,"r":"桜46","h":"多摩センター駅"},{"s":"holiday","t":605,"r":"桜46","h":"多摩センター駅"},{"s":"holiday","t":665,"r":"桜46","h":"多摩センター駅"},{"s":"holiday","t":725,"r":"桜46","h":"多摩センター駅"},{"s":"holiday","t":785,"r":"桜46","h":"多摩センター駅"},{"s":"holiday","t":845,"r":"桜46","h":"多摩センター駅"},{"s":"holiday","t":905,"r":"桜46","h":"多摩センター駅"},{"s":"holiday","t":965,"r":"桜46","h":"多摩センター駅"},{"s":"holiday","t":1025,"r":"桜46","h":"多摩センター駅"},{"s":"holiday","t":1085,"r":"桜46","h":"多摩センター駅"},{"s":"holiday","t":1145,"r":"桜46","h":"多摩センター駅"},{"s":"holiday","t":1205,"r":"桜46","h":"多摩センター駅"},{"s":"holiday","t":1265,"r":"桜46","h":"多摩センター駅"}]},{"id":"minami_kaidori_to_seiseki","origin":"南貝取","dest":"聖蹟桜ヶ丘駅","group":"南貝取 ⇄ 聖蹟桜ヶ丘駅","trips":[{"s":"weekday","t":372,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":402,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":432,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":462,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":492,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":522,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":552,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":582,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":612,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":642,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":672,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":702,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":732,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":762,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":792,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":822,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":852,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":882,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":912,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":942,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":972,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":1002,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":1032,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":1062,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":1092,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":1122,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":1152,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":1182,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":1212,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":1242,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":1272,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"weekday","t":1302,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":372,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":412,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":452,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":492,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":532,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":572,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":612,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":652,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":692,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":732,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":772,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":812,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":852,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":892,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":932,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":972,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":1012,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":1052,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":1092,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":1132,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":1172,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":1212,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":1252,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"saturday","t":1292,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":372,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":432,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":492,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":552,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":612,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":672,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":732,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":792,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":852,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":912,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":972,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":1032,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":1092,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":1152,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":1212,"r":"桜45","h":"聖蹟桜ヶ丘駅"},{"s":"holiday","t":1272,"r":"桜45","h":"聖蹟桜ヶ丘駅"}]},{"id":"seiseki_to_minami_kaidori","origin":"聖蹟桜ヶ丘駅","dest":"南貝取","group":"南貝取 ⇄ 聖蹟桜ヶ丘駅","trips":[{"s":"weekday","t":379,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":409,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":439,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":469,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":499,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":529,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":559,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":589,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":619,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":649,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":679,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":709,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":739,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":769,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":799,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":829,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":859,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":889,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":919,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":949,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":979,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":1009,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":1039,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":1069,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":1099,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":1129,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":1159,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":1189,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":1219,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":1249,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":1279,"r":"桜45","h":"多摩センター駅"},{"s":"weekday","t":1309,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":379,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":419,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":459,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":499,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":539,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":579,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":619,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":659,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":699,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":739,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":779,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":819,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":859,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":899,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":939,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":979,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":1019,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":1059,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":1099,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":1139,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":1179,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":1219,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":1259,"r":"桜45","h":"多摩センター駅"},{"s":"saturday","t":1299,"r":"桜45","h":"多摩センター駅"},{"s":"holiday","t":379,"r":"桜45","h":"多摩センター駅"},{"s":"holiday","t":439,"r":"桜45","h":"多摩センター駅"},{"s":"holiday","t":499,"r":"桜45","h":"多摩センター駅"},{"s":"holiday","t":559,"r":"桜45","h":"多摩センター駅"},{"s":"holiday","t":619,"r":"桜45","h":"多摩センター駅"},{"s":"holiday","t":679,"r":"桜45","h":"多摩センター駅"},{"s":"holiday","t":739,"r":"桜45","h":"多摩センター駅"},{"s":"holiday","t":799,"r":"桜45","h":"多摩センター駅"},{"s":"holiday","t":859,"r":"桜45","h":"多摩センター駅"},{"s":"holiday","t":919,"r":"桜45","h":"多摩センター駅"},{"s":"holiday","t":979,"r":"桜45","h":"多摩センター駅"},{"s":"holiday","t":1039,"r":"桜45","h":"多摩センター駅"},{"s":"holiday","t":1099,"r":"桜45","h":"多摩センター駅"},{"s":"holiday","t":1159,"r":"桜45","h":"多摩センター駅"},{"s":"holiday","t":1219,"r":"桜45","h":"多摩センター駅"},{"s":"holiday","t":1279,"r":"桜45","h":"多摩センター駅"}]}]}</script>
+
+<script>
+(() => {
+  const DATA_URL = "data/timetable.json";
+  const STORAGE_KEY = "kaidori-bus:timetable";
+  const DAYS_JP = ["日", "月", "火", "水", "木", "金", "土"];
+
+  let data = null;
+  let mode = "auto";           // auto | weekday | saturday | holiday
+  let openDirId = null;
+
+  // ---------- データ読み込み ----------
+  // ネット優先。取れなければ前回保存分、それも無ければ埋め込みサンプル。
+  async function loadData(force = false) {
+    let fresh = null;
+    try {
+      const res = await fetch(DATA_URL + (force ? "?t=" + Date.now() : ""), { cache: "no-store" });
+      if (res.ok) fresh = await res.json();
+    } catch (_) { /* オフラインなど */ }
+
+    if (fresh) {
+      data = fresh;
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh)); } catch (_) {}
+    } else if (!data) {
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) data = JSON.parse(saved);
+      } catch (_) {}
+      if (!data) data = JSON.parse(document.getElementById("fallback").textContent);
+    }
+    render();
+  }
+
+  // ---------- 暦の計算 ----------
+  const pad = n => String(n).padStart(2, "0");
+  const ymd = d => `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}`;
+  const dow = d => (d.getDay() + 6) % 7;            // GTFS は月曜=0
+
+  function activeServices(date) {
+    const key = ymd(date), w = dow(date), ids = [];
+    for (const [sid, s] of Object.entries(data.services)) {
+      if (s.add.includes(key)) { ids.push(sid); continue; }
+      if (s.remove.includes(key)) continue;
+      if (s.days[w] === 1 && s.start <= key && key <= s.end) ids.push(sid);
+    }
+    return new Set(ids);
+  }
+
+  // 「平日／土曜／日祝」を押したときに代表させる日付を探す
+  function representativeDate(kind) {
+    const holidayLike = new Set();
+    for (const s of Object.values(data.services)) s.add.forEach(x => holidayLike.add(x));
+    const d = new Date(); d.setHours(12, 0, 0, 0);
+    for (let i = 0; i < 21; i++) {
+      const w = d.getDay(), isHol = holidayLike.has(ymd(d));
+      if (kind === "weekday"  && w >= 1 && w <= 5 && !isHol) return d;
+      if (kind === "saturday" && w === 6 && !isHol) return d;
+      if (kind === "holiday"  && (w === 0 || isHol)) return d;
+      d.setDate(d.getDate() + 1);
+    }
+    return d;
+  }
+
+  // 表示対象の「便」を、今日（または代表日）の分だけ集めて分単位で返す
+  function tripsFor(dir, baseDate) {
+    const today = activeServices(baseDate);
+    const list = dir.trips.filter(t => today.has(t.s)).map(t => ({ ...t }));
+    // 深夜便対策：前日のサービスで 24:00 を超える便は「今日の早朝」として扱う
+    const y = new Date(baseDate); y.setDate(y.getDate() - 1);
+    const yest = activeServices(y);
+    dir.trips.filter(t => yest.has(t.s) && t.t >= 1440).forEach(t => list.push({ ...t, t: t.t - 1440 }));
+    list.sort((a, b) => a.t - b.t);
+    // 同一時刻・同一系統の重複（複数乗り場の拾い過ぎ）を除く
+    return list.filter((t, i) => i === 0 || !(t.t === list[i - 1].t && t.r === list[i - 1].r));
+  }
+
+  const hhmm = m => `${pad(Math.floor(m / 60) % 24)}:${pad(m % 60)}`;
+
+  // ---------- 描画 ----------
+  function render() {
+    if (!data) return;
+    const now = new Date();
+    const baseDate = mode === "auto" ? now : representativeDate(mode);
+    const nowMin = mode === "auto" ? now.getHours() * 60 + now.getMinutes() : -1;
+
+    document.getElementById("clock").innerHTML =
+      `${pad(now.getHours())}:${pad(now.getMinutes())}<small id="dateLabel">${now.getMonth() + 1}/${now.getDate()}（${DAYS_JP[now.getDay()]}）</small>`;
+
+    // お知らせ
+    const notice = document.getElementById("notice");
+    notice.className = "notice"; notice.textContent = "";
+    if (data.sample) {
+      notice.textContent = "サンプルデータを表示しています。実際のダイヤではありません。";
+    } else if (mode !== "auto") {
+      notice.textContent = `${baseDate.getMonth() + 1}/${baseDate.getDate()}（${DAYS_JP[baseDate.getDay()]}）のダイヤを表示中`;
+    } else if (data.valid_until) {
+      const end = new Date(+data.valid_until.slice(0, 4), +data.valid_until.slice(4, 6) - 1, +data.valid_until.slice(6, 8));
+      const left = Math.floor((end - now) / 86400000);
+      if (left < 0) { notice.textContent = "時刻表データの有効期限が切れています。更新が必要です。"; notice.classList.add("bad"); }
+      else if (left <= 14) notice.textContent = `時刻表データはあと ${left} 日で期限切れになります。`;
+    }
+
+    // ボード
+    const board = document.getElementById("board");
+    board.innerHTML = "";
+    for (const dir of data.directions) {
+      const trips = tripsFor(dir, baseDate);
+      const upcoming = trips.filter(t => t.t >= nowMin);
+      const card = document.createElement("button");
+      card.type = "button"; card.className = "card"; card.dataset.id = dir.id;
+      card.setAttribute("aria-label", `${dir.origin}から${dir.dest}の時刻表を開く`);
+
+      let body = `<div class="route"><b>${dir.origin}</b><span class="arrow">→</span>${dir.dest}</div>`;
+      if (!trips.length) {
+        card.classList.add("none");
+        body += `<div class="next" style="grid-column:1/-1">この日の便はありません</div>`;
+      } else if (!upcoming.length) {
+        card.classList.add("none");
+        const tmr = new Date(baseDate); tmr.setDate(tmr.getDate() + 1);
+        const first = tripsFor(dir, tmr)[0];
+        body += `<div class="next" style="grid-column:1/-1">本日の便は終了${first ? `　明日の始発 ${hhmm(first.t)}` : ""}</div>`;
+      } else {
+        const [n, ...rest] = upcoming;
+        const wait = nowMin < 0 ? null : n.t - nowMin;
+        if (wait !== null && wait <= 5) card.classList.add("soon");
+        body += `<div class="next">${hhmm(n.t)}${n.r ? `<span class="line">${n.r}</span>` : ""}</div>`;
+        body += wait === null ? `<div class="wait"></div>`
+              : wait === 0 ? `<div class="wait"><b>まもなく</b></div>`
+              : `<div class="wait">あと <b>${wait}</b> 分</div>`;
+        body += `<div class="after">${rest.slice(0, 3).map(t => `<span>${hhmm(t.t)}</span>`).join("") || "<span>次はありません</span>"}</div>`;
+      }
+      card.innerHTML = body;
+      card.addEventListener("click", () => openDialog(dir, trips, nowMin, baseDate));
+      board.appendChild(card);
+    }
+
+    // フッター
+    const g = data.generated_at ? new Date(data.generated_at) : null;
+    document.getElementById("dataInfo").textContent =
+      `${data.source || ""}` +
+      (g ? `　更新 ${g.getMonth() + 1}/${g.getDate()} ${pad(g.getHours())}:${pad(g.getMinutes())}` : "") +
+      (data.valid_until ? `　有効期限 ${data.valid_until.slice(0, 4)}/${+data.valid_until.slice(4, 6)}/${+data.valid_until.slice(6, 8)}` : "");
+  }
+
+  function openDialog(dir, trips, nowMin, baseDate) {
+    const dlg = document.getElementById("dlg");
+    document.getElementById("dlgTitle").firstChild.textContent = `${dir.origin} → ${dir.dest}`;
+    document.getElementById("dlgSub").textContent =
+      `${baseDate.getMonth() + 1}/${baseDate.getDate()}（${DAYS_JP[baseDate.getDay()]}）のダイヤ`;
+    const body = document.getElementById("dlgBody");
+    body.innerHTML = "";
+    if (!trips.length) { body.innerHTML = `<p style="color:var(--muted);padding:20px 0">この日の便はありません。</p>`; }
+    const nextIdx = trips.findIndex(t => t.t >= nowMin);
+    const multiRoute = new Set(trips.map(t => t.r)).size > 1;   // 系統が複数あるときだけ系統名を添える
+    const byHour = new Map();
+    trips.forEach((t, i) => {
+      const h = Math.floor(t.t / 60);
+      if (!byHour.has(h)) byHour.set(h, []);
+      byHour.get(h).push({ ...t, cls: i === nextIdx ? "next" : (nowMin >= 0 && t.t < nowMin ? "past" : "") });
+    });
+    for (const [h, list] of byHour) {
+      const row = document.createElement("div"); row.className = "hour";
+      row.innerHTML = `<div class="h">${pad(h % 24)}</div><div class="m">${
+        list.map(t => `<span class="${t.cls}">${pad(t.t % 60)}${multiRoute && t.r ? `<i>${t.r}</i>` : ""}</span>`).join("")}</div>`;
+      body.appendChild(row);
+    }
+    openDirId = dir.id;
+    dlg.showModal();
+    const nx = body.querySelector(".next"); if (nx) nx.scrollIntoView({ block: "center" });
+  }
+
+  // ---------- イベント ----------
+  document.querySelectorAll(".daytype button").forEach(b => b.addEventListener("click", () => {
+    mode = b.dataset.mode;
+    document.querySelectorAll(".daytype button").forEach(x => x.setAttribute("aria-pressed", x === b));
+    render();
+  }));
+  document.getElementById("dlgClose").addEventListener("click", () => document.getElementById("dlg").close());
+  document.getElementById("dlg").addEventListener("click", e => { if (e.target.id === "dlg") e.target.close(); });
+  document.getElementById("reload").addEventListener("click", () => loadData(true));
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { render(); loadData(); } });
+
+  // 毎分の頭で再描画（＋10 秒ごとの保険）
+  setInterval(render, 10000);
+
+  // Service Worker（https または localhost のときだけ）
+  if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
+
+  loadData();
+})();
+</script>
+</body>
+</html>
