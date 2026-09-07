@@ -32,14 +32,17 @@ DIRECTIONS = [
     {"id": "kaidori_park_to_nagayama",   "origin": "貝取北公園通り", "dest": "永山駅",       "station": "永山駅",       "role": "out"},
     {"id": "kaidori_center_to_nagayama", "origin": "貝取北センター", "dest": "永山駅",       "station": "永山駅",       "role": "out"},
     {"id": "nagayama_to_kaidori_park",   "origin": "永山駅",         "dest": "貝取北公園通り", "station": "永山駅",       "role": "home"},
+    {"id": "nagayama_to_kaidori_center", "origin": "永山駅",         "dest": "貝取北センター", "station": "永山駅",       "role": "home"},
     {"id": "kaidori_park_to_tamacenter", "origin": "貝取北公園通り", "dest": "多摩センター駅", "station": "多摩センター駅", "role": "out"},
     {"id": "kaidori_center_to_tamacenter","origin": "貝取北センター", "dest": "多摩センター駅", "station": "多摩センター駅", "role": "out"},
     {"id": "tamacenter_to_kaidori_park", "origin": "多摩センター駅", "dest": "貝取北公園通り", "station": "多摩センター駅", "role": "home"},
+    {"id": "tamacenter_to_kaidori_center","origin": "多摩センター駅", "dest": "貝取北センター", "station": "多摩センター駅", "role": "home"},
     {"id": "kaidori_center_to_seiseki",  "origin": "貝取北センター", "dest": "聖蹟桜ヶ丘駅", "station": "聖蹟桜ヶ丘駅", "role": "out"},
     {"id": "kaidori_to_seiseki",         "origin": "貝取",           "dest": "聖蹟桜ヶ丘駅", "station": "聖蹟桜ヶ丘駅", "role": "out"},
     {"id": "seiseki_to_kaidori_center",  "origin": "聖蹟桜ヶ丘駅",   "dest": "貝取北センター", "station": "聖蹟桜ヶ丘駅", "role": "home"},
     {"id": "minami_kaidori_to_seiseki",  "origin": "南貝取",         "dest": "聖蹟桜ヶ丘駅", "station": "聖蹟桜ヶ丘駅", "role": "out"},
     {"id": "seiseki_to_minami_kaidori",  "origin": "聖蹟桜ヶ丘駅",   "dest": "南貝取",       "station": "聖蹟桜ヶ丘駅", "role": "home"},
+    {"id": "seiseki_to_kaidori",         "origin": "聖蹟桜ヶ丘駅",   "dest": "貝取",         "station": "聖蹟桜ヶ丘駅", "role": "home"},
 ]
 
 OUTPUT = Path(__file__).resolve().parent.parent / "data" / "timetable.json"
