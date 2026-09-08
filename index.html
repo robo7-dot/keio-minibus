@@ -63,6 +63,16 @@
   .daytype button[aria-pressed="true"] { background: var(--ink); color: var(--card); border-color: var(--ink); }
   .daytype button:focus-visible { outline: 3px solid #5B8DEF; outline-offset: 2px; }
 
+  /* ---------- 玄関ボード（天気・ごみ） ---------- */
+  .info { display: flex; flex-wrap: wrap; gap: 8px 28px; align-items: center; margin: -4px 4px 14px;
+    font-size: 18px; color: var(--ink-2); min-height: 26px; }
+  .info:empty { display: none; }
+  .info .item { display: inline-flex; align-items: baseline; gap: 8px; white-space: nowrap; }
+  .info .item b { color: var(--ink); font-weight: 700; font-size: 20px; }
+  .info .item .lbl { font-size: 14px; color: var(--muted); }
+  .info .gomi b { color: #fff; background: var(--ink-2); border-radius: 8px; padding: 3px 10px; font-size: 17px; }
+  .info .gomi.none { color: var(--muted); }
+
   /* ---------- お知らせ帯 ---------- */
   .notice {
     margin: 0 0 14px; padding: 10px 14px; border-radius: 10px; font-size: 15px;
@@ -97,6 +107,11 @@
   }
   .card:focus-visible { outline: 3px solid #5B8DEF; outline-offset: 2px; }
   .card:active { transform: scale(0.99); }
+  .card .loc { position: absolute; top: 10px; right: 12px; font-size: 13px; color: var(--ink-2);
+    text-decoration: none; border: 1px solid var(--line); border-radius: 999px; padding: 5px 10px; background: var(--card); }
+  .card .loc:active { background: var(--bg); }
+  .card { position: relative; }
+  .card .route { padding-right: 90px; }
   .card .route { grid-column: 1 / -1; font-size: 17px; color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
   .card .route b { color: var(--ink); font-weight: 600; }
   .card .route .arrow { color: var(--muted); }
@@ -151,6 +166,8 @@
   </div>
 </header>
 
+<div class="info" id="info" aria-live="polite"></div>
+
 <div class="notice" id="notice"></div>
 
 <main class="board" id="board" aria-live="polite"></main>
@@ -180,6 +197,115 @@
   let data = null;
   let mode = "auto";           // auto | weekday | saturday | holiday
   let openDirId = null;
+
+  // ---------- バスナビ.com（京王バス）のバス位置情報ページ ----------
+  // 停留所ごとの ID。カード右上の「位置を見る」で開く。
+  const BUSNAVI_STOP_ID = {
+    "貝取北公園通り": "00021300",
+    "貝取北センター": "00020199",
+    "南貝取": "00021041",
+    "貝取": "00020192",
+    "永山駅": "00020143",
+    "多摩センター駅": "00020748",
+    "聖蹟桜ヶ丘駅": "00020654",
+  };
+  function busLocationUrl(dir) {
+    const from = BUSNAVI_STOP_ID[dir.origin], to = BUSNAVI_STOP_ID[dir.dest];
+    if (!from) return null;
+    return `https://transfer.navitime.biz/bus-navi/pc/location/BusLocationResult?startId=${from}${to ? `&goalId=${to}` : ""}&sort=near`;
+  }
+
+  // ---------- ごみ収集（多摩市 緑地区：貝取1〜5丁目・永山・諏訪・南野）----------
+  // 令和8年度カレンダーより。年度が替わったら validUntil と規則を見直す。
+  const GOMI = {
+    validUntil: "20270331",
+    byDow: { 1: "缶・びん", 2: "燃やせるごみ", 4: "プラスチック・粗大ごみ", 5: "燃やせるごみ" },   // 0=日 … 6=土
+    wednesday: { 1: "新聞・古布", 2: "燃やせないごみ", 3: "新聞・古布", 4: "燃やせないごみ", 5: null }, // 第n水曜
+    off: ["1231", "0101"],   // MMDD：収集なし
+  };
+  function gomiFor(d) {
+    const mmdd = pad(d.getMonth() + 1) + pad(d.getDate());
+    if (GOMI.off.includes(mmdd)) return null;
+    const dow = d.getDay();
+    if (dow === 3) return GOMI.wednesday[Math.ceil(d.getDate() / 7)] || null;
+    return GOMI.byDow[dow] || null;
+  }
+
+  // ---------- 天気（気象庁 東京都 → 東京地方 / 気温は東京）----------
+  const JMA_URL = "https://www.jma.go.jp/bosai/forecast/data/forecast/130000.json";
+  let weather = null;   // { pops: [{label, value}], tmin, tmax, tempDay, text }
+  async function loadWeather() {
+    try {
+      const res = await fetch(JMA_URL, { cache: "no-store" });
+      if (!res.ok) return;
+      const j = await res.json();
+      const short = j[0].timeSeries;
+      const today = ymd(new Date());
+      const dateOf = t => t.slice(0, 10).replace(/-/g, "");
+      const hourOf = t => +t.slice(11, 13);
+
+      // 天気概況
+      const wArea = short[0].areas.find(a => a.area.code === "130010") || short[0].areas[0];
+      const wIdx = short[0].timeDefines.findIndex(t => dateOf(t) === today);
+      const code = wArea.weatherCodes[wIdx >= 0 ? wIdx : 0] || "";
+      const text = { "1": "晴れ", "2": "くもり", "3": "雨", "4": "雪" }[code[0]] || "";
+
+      // 降水確率（6 時間区切り）：今日の残りの区切りを最大 3 つ
+      const pArea = short[1].areas.find(a => a.area.code === "130010") || short[1].areas[0];
+      const nowH = new Date().getHours();
+      const pops = [];
+      short[1].timeDefines.forEach((t, i) => {
+        if (dateOf(t) !== today) return;
+        const h = hourOf(t);
+        if (h + 6 <= nowH) return;                 // 終わった時間帯は出さない
+        const label = h === 0 ? "未明" : h === 6 ? "午前" : h === 12 ? "午後" : "夜";
+        pops.push({ label, value: pArea.pops[i] });
+      });
+      // 今日の分が無ければ明日の最初の 2 つ
+      if (!pops.length) {
+        const tmr = ymd(new Date(Date.now() + 86400000));
+        short[1].timeDefines.forEach((t, i) => {
+          if (dateOf(t) !== tmr || pops.length >= 2) return;
+          const h = hourOf(t);
+          pops.push({ label: "明日" + (h === 0 ? "未明" : h === 6 ? "午前" : h === 12 ? "午後" : "夜"), value: pArea.pops[i] });
+        });
+      }
+
+      // 気温：今日の分があれば今日、無ければ明日
+      const tArea = short[2].areas.find(a => a.area.code === "44132") || short[2].areas[0];
+      let tmin = null, tmax = null, tempDay = "今日";
+      const pick = day => {
+        short[2].timeDefines.forEach((t, i) => {
+          if (dateOf(t) !== day) return;
+          const v = tArea.temps[i];
+          if (v === "") return;
+          if (hourOf(t) === 0) tmin = v; else tmax = v;
+        });
+      };
+      pick(today);
+      if (tmax === null && tmin === null) { tempDay = "明日"; pick(ymd(new Date(Date.now() + 86400000))); }
+      weather = { text, pops, tmin, tmax, tempDay };
+      renderInfo();
+    } catch (_) { /* オフライン等：帯の天気部分は出さない */ }
+  }
+
+  function renderInfo() {
+    const el = document.getElementById("info");
+    const parts = [];
+    if (weather) {
+      if (weather.pops.length)
+        parts.push(`<span class="item"><span class="lbl">☂</span>${weather.pops.map(p => `<span><span class="lbl">${p.label}</span> <b>${p.value}%</b></span>`).join(" ")}</span>`);
+      if (weather.tmin !== null || weather.tmax !== null)
+        parts.push(`<span class="item"><span class="lbl">${weather.tempDay}</span><b>${
+          weather.tmin !== null && weather.tmax !== null ? `${weather.tmin}〜${weather.tmax}℃`
+          : weather.tmax !== null ? `最高 ${weather.tmax}℃` : `最低 ${weather.tmin}℃`
+        }</b>${weather.text ? `<span class="lbl">${weather.text}</span>` : ""}</span>`);
+    }
+    const now = new Date(), g = gomiFor(now);
+    if (ymd(now) > GOMI.validUntil) parts.push(`<span class="item gomi none">🗑 ごみの規則を要確認（年度更新）</span>`);
+    else if (g) parts.push(`<span class="item gomi"><span class="lbl">🗑 今日</span><b>${g}</b></span>`);
+    el.innerHTML = parts.join("");
+  }
 
   // ---------- データ読み込み ----------
   // ネット優先。取れなければ前回保存分、それも無ければ埋め込みサンプル。
@@ -260,6 +386,8 @@
     document.getElementById("clock").innerHTML =
       `${pad(now.getHours())}:${pad(now.getMinutes())}<small id="dateLabel">${now.getMonth() + 1}/${now.getDate()}（${DAYS_JP[now.getDay()]}）</small>`;
 
+    renderInfo();
+
     // お知らせ
     const notice = document.getElementById("notice");
     notice.className = "notice"; notice.textContent = "";
@@ -307,11 +435,13 @@
   function buildCard(dir, baseDate, nowMin) {
     const trips = tripsFor(dir, baseDate);
     const upcoming = trips.filter(t => t.t >= nowMin);
-    const card = document.createElement("button");
-    card.type = "button"; card.className = "card"; card.dataset.id = dir.id;
+    const card = document.createElement("div");
+    card.className = "card"; card.dataset.id = dir.id; card.tabIndex = 0; card.setAttribute("role", "button");
     card.setAttribute("aria-label", `${dir.origin}から${dir.dest}の時刻表を開く`);
 
-    let body = `<div class="route"><b>${dir.origin}</b><span class="arrow">→</span>${dir.dest}</div>`;
+    const locUrl = busLocationUrl(dir);
+    let body = `<div class="route"><b>${dir.origin}</b><span class="arrow">→</span>${dir.dest}</div>`
+             + (locUrl ? `<a class="loc" href="${locUrl}" target="_blank" rel="noopener">位置を見る</a>` : "");
     if (!trips.length) {
       card.classList.add("none");
       body += `<div class="next" style="grid-column:1/-1">この日の便はありません</div>`;
@@ -333,7 +463,8 @@
       body += `<div class="after">${rest.slice(0, 3).map(t => `<span class="t">${hhmm(t.t)}</span>`).join("") || `<span class="t">次はありません</span>`}</div>`;
     }
     card.innerHTML = body;
-    card.addEventListener("click", () => openDialog(dir, trips, nowMin, baseDate));
+    card.addEventListener("click", e => { if (e.target.closest(".loc")) return; openDialog(dir, trips, nowMin, baseDate); });
+    card.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openDialog(dir, trips, nowMin, baseDate); } });
     return card;
   }
 
@@ -376,7 +507,8 @@
   document.getElementById("dlgClose").addEventListener("click", () => document.getElementById("dlg").close());
   document.getElementById("dlg").addEventListener("click", e => { if (e.target.id === "dlg") e.target.close(); });
   document.getElementById("reload").addEventListener("click", () => loadData(true));
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) { render(); loadData(); } });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) { render(); loadData(); loadWeather(); } });
+  setInterval(loadWeather, 30 * 60 * 1000);   // 30 分ごとに天気を更新
 
   // 毎分の頭で再描画（＋10 秒ごとの保険）
   setInterval(render, 10000);
@@ -387,6 +519,7 @@
   }
 
   loadData();
+  loadWeather();
 })();
 </script>
 </body>
