@@ -29,14 +29,15 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 DIRECTIONS = [
     # station: 画面の見出しになる駅。role: out=家から駅へ / home=駅から家へ
+    # exclude: 系統名にこの文字列を含む便を除外する（貝取北センターの東西線は貝取北公園通りのカードで見るため）
     {"id": "kaidori_park_to_nagayama",   "origin": "貝取北公園通り", "dest": "永山駅",       "station": "永山駅",       "role": "out"},
-    {"id": "kaidori_center_to_nagayama", "origin": "貝取北センター", "dest": "永山駅",       "station": "永山駅",       "role": "out"},
+    {"id": "kaidori_center_to_nagayama", "origin": "貝取北センター", "dest": "永山駅",       "station": "永山駅",       "role": "out", "exclude": ["東西線"]},
     {"id": "nagayama_to_kaidori_park",   "origin": "永山駅",         "dest": "貝取北公園通り", "station": "永山駅",       "role": "home"},
-    {"id": "nagayama_to_kaidori_center", "origin": "永山駅",         "dest": "貝取北センター", "station": "永山駅",       "role": "home"},
+    {"id": "nagayama_to_kaidori_center", "origin": "永山駅",         "dest": "貝取北センター", "station": "永山駅",       "role": "home", "exclude": ["東西線"]},
     {"id": "kaidori_park_to_tamacenter", "origin": "貝取北公園通り", "dest": "多摩センター駅", "station": "多摩センター駅", "role": "out"},
-    {"id": "kaidori_center_to_tamacenter","origin": "貝取北センター", "dest": "多摩センター駅", "station": "多摩センター駅", "role": "out"},
+    {"id": "kaidori_center_to_tamacenter","origin": "貝取北センター", "dest": "多摩センター駅", "station": "多摩センター駅", "role": "out", "exclude": ["東西線"]},
     {"id": "tamacenter_to_kaidori_park", "origin": "多摩センター駅", "dest": "貝取北公園通り", "station": "多摩センター駅", "role": "home"},
-    {"id": "tamacenter_to_kaidori_center","origin": "多摩センター駅", "dest": "貝取北センター", "station": "多摩センター駅", "role": "home"},
+    {"id": "tamacenter_to_kaidori_center","origin": "多摩センター駅", "dest": "貝取北センター", "station": "多摩センター駅", "role": "home", "exclude": ["東西線"]},
     {"id": "kaidori_center_to_seiseki",  "origin": "貝取北センター", "dest": "聖蹟桜ヶ丘駅", "station": "聖蹟桜ヶ丘駅", "role": "out"},
     {"id": "kaidori_to_seiseki",         "origin": "貝取",           "dest": "聖蹟桜ヶ丘駅", "station": "聖蹟桜ヶ丘駅", "role": "out"},
     {"id": "seiseki_to_kaidori_center",  "origin": "聖蹟桜ヶ丘駅",   "dest": "貝取北センター", "station": "聖蹟桜ヶ丘駅", "role": "home"},
@@ -158,6 +159,8 @@ def main() -> int:
             route_name = route.get("route_short_name") or route.get("route_long_name") or ""
             route_name = route_name.replace("多摩市ミニバス ", "")   # バッジ表示用に短くする
             route_name = route_name.translate(str.maketrans("０１２３４５６７８９", "0123456789"))  # 全角数字→半角
+            if any(x in route_name for x in d.get("exclude", [])):
+                continue
 
             found.append({
                 "s": trip.get("service_id", ""),               # service_id
