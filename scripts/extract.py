@@ -44,6 +44,8 @@ DIRECTIONS = [
     {"id": "minami_kaidori_to_seiseki",  "origin": "南貝取",         "dest": "聖蹟桜ヶ丘駅", "station": "聖蹟桜ヶ丘駅", "role": "out"},
     {"id": "seiseki_to_minami_kaidori",  "origin": "聖蹟桜ヶ丘駅",   "dest": "南貝取",       "station": "聖蹟桜ヶ丘駅", "role": "home"},
     {"id": "seiseki_to_kaidori",         "origin": "聖蹟桜ヶ丘駅",   "dest": "貝取",         "station": "聖蹟桜ヶ丘駅", "role": "home"},
+    {"id": "nagayama_to_minami_kaidori",  "origin": "永山駅",         "dest": "南貝取",       "station": "永山駅",       "role": "home"},
+    {"id": "minami_kaidori_to_nagayama",  "origin": "南貝取",         "dest": "永山駅",       "station": "永山駅",       "role": "out"},
 ]
 
 OUTPUT = Path(__file__).resolve().parent.parent / "data" / "timetable.json"
