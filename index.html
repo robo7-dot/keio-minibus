@@ -175,14 +175,9 @@
 <section class="station" style="margin-top:8px;">
   <h2>羽田空港 <small>リムジンバス</small></h2>
   <div class="cols" style="grid-template-columns:1fr;">
-    <div class="col out" style="background:var(--bg);border:1.5px solid var(--line);">
+    <div class="col" style="background:var(--bg);border:1.5px solid var(--line);border-radius:18px;padding:10px;">
       <div class="col-label"><b style="background:var(--ink-2);">空港から帰る</b>羽田空港 → 多摩センター駅</div>
-      <a class="card" href="https://www.limousinebus.co.jp/ja/timetable/detail/Haneda-Tama/?dir=1"
-         target="_blank" rel="noopener" style="text-decoration:none;display:grid;grid-template-columns:1fr auto;align-items:center;min-height:80px;gap:8px 12px;">
-        <div class="route" style="padding-right:0;"><b>羽田空港</b><span class="arrow">→</span>多摩センター駅<small style="font-size:13px;color:var(--muted);margin-left:8px;">京王バス・東京空港交通</small></div>
-        <div style="font-size:15px;color:var(--ink-2);border:1px solid var(--line);border-radius:999px;padding:6px 14px;white-space:nowrap;">時刻表を開く ↗</div>
-        <div class="after" style="grid-column:1/-1;"><span class="t">空港発 13便/日・多摩センター16番のりば着</span></div>
-      </a>
+      <div class="card" id="limo-card" tabindex="0" role="button" aria-label="羽田空港リムジンバス時刻表を開く">読み込み中…</div>
     </div>
   </div>
 </section>
@@ -212,6 +207,52 @@
   let data = null;
   let mode = "auto";           // auto | weekday | saturday | holiday
   let openDirId = null;
+
+  // ---------- 羽田空港リムジンバス（東京空港交通・京王バス共同運行）----------
+  // 出典: https://www.limousinebus.co.jp/ja/timetable/detail/Haneda-Tama/?dir=1
+  // 平日・土休日同一ダイヤ。改正時はこのデータを更新する。
+  // データ取得日: 2026-09-15
+  const LIMOUSINE_TIMETABLE = [
+    // [羽田第3T発（分）, 多摩センター着（分）]
+    [7*60+25, 9*60+15],[12*60+25,14*60+15],[13*60+25,15*60+15],[14*60+25,16*60+15],
+    [15*60+25,17*60+15],[16*60+25,18*60+15],[17*60+25,19*60+25],[18*60+25,20*60+15],
+    [19*60+25,21*60+5],[20*60+25,21*60+55],[21*60+5,22*60+35],[21*60+25,22*60+55],
+    [22*60+15,23*60+45],
+  ];
+  const LIMOUSINE_URL = "https://www.limousinebus.co.jp/ja/timetable/detail/Haneda-Tama/?dir=1";
+  const LIMOUSINE_VALID = "20270401";   // この日付を過ぎたら「データ要確認」と出す
+
+  function renderLimousine(nowMin) {
+    const el = document.getElementById("limo-card");
+    const upcoming = LIMOUSINE_TIMETABLE.filter(([dep]) => dep >= nowMin);
+    const next = upcoming[0] || null;
+    const wait = next ? next[0] - nowMin : null;
+    const past = nowMin < 0;   // 今日ボタン以外のとき
+    const expired = ymd(new Date()) > LIMOUSINE_VALID;
+
+    let body = "";
+    if (expired) {
+      body = `<div class="next" style="grid-column:1/-1;font-size:18px;color:var(--soon)">時刻表データの確認が必要です</div>`;
+    } else if (!next || past) {
+      const first = LIMOUSINE_TIMETABLE[0];
+      body = `<div class="next" style="grid-column:1/-1">本日の便は終了　始発 ${hhmm(first[0])} 発</div>`;
+    } else {
+      const soon = wait !== null && wait <= 30;   // 30分以内は強調
+      if (soon) el.classList.add("soon");
+      else el.classList.remove("soon");
+      body  = `<div class="next">${hhmm(next[0])}<span class="line">羽田第3T発</span></div>`;
+      body += wait === 0 ? `<div class="wait"><b>まもなく</b></div>`
+            : `<div class="wait">あと <b>${wait}</b> 分</div>`;
+      body += `<div class="badges"><span class="plat">多摩センター ${hhmm(next[1])} 着</span></div>`;
+      body += `<div class="after">${upcoming.slice(1,3).map(([d])=>`<span class="t">${hhmm(d)}</span>`).join("") || ""}</div>`;
+    }
+    el.innerHTML = `
+      <div class="route"><b>羽田空港</b><span class="arrow">→</span>多摩センター駅
+        <small style="font-size:13px;color:var(--muted);margin-left:8px;">京王バス・東京空港交通</small>
+      </div>
+      <a class="loc" href="${LIMOUSINE_URL}" target="_blank" rel="noopener">時刻表 ↗</a>
+      ${body}`;
+  }
 
   // ---------- バスナビ.com（京王バス）のバス位置情報ページ ----------
   // 停留所ごとの ID。カード右上の「位置を見る」で開く。
@@ -438,6 +479,8 @@
       sec.appendChild(cols);
       board.appendChild(sec);
     }
+
+    renderLimousine(nowMin);
 
     // フッター
     const g = data.generated_at ? new Date(data.generated_at) : null;
