@@ -21,18 +21,58 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: 今日有効な版の日付を ODPT カタログから探す
+        id: find
+        run: |
+          python3 - <<'EOF'
+          import json, re, os, urllib.request
+          from datetime import datetime, timezone, timedelta
+
+          # ODPT のカタログ（CKAN）は認証なしで読める。
+          # 「京王バス-YYYYMMDD」という名前で版が並んでいるので、今日以前で最新の日付を選ぶ。
+          today = datetime.now(timezone(timedelta(hours=9))).strftime("%Y%m%d")
+          dates = set()
+          try:
+              api = "https://ckan.odpt.org/api/3/action/package_show?id=keio_bus_all_lines"
+              with urllib.request.urlopen(api, timeout=30) as r:
+                  pkg = json.load(r)["result"]
+              for res in pkg.get("resources", []):
+                  m = re.search(r"(\d{8})", res.get("name", "") + " " + res.get("url", ""))
+                  if m: dates.add(m.group(1))
+          except Exception as e:
+              print("API が使えないのでページから探します:", e)
+              with urllib.request.urlopen("https://ckan.odpt.org/dataset/keio_bus_all_lines", timeout=30) as r:
+                  html = r.read().decode("utf-8", "ignore")
+              dates.update(re.findall(r"Keio Bus-(\d{8})", html))
+
+          valid = sorted(d for d in dates if d <= today)
+          print("見つかった版:", sorted(dates))
+          if not valid:
+              raise SystemExit("今日以前の版が見つかりません")
+          chosen = valid[-1]
+          print("使う版:", chosen)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"date={chosen}\n")
+          EOF
+
       - name: ODPT から GTFS zip をダウンロード
         env:
-          ODPT_GTFS_URL: ${{ secrets.ODPT_GTFS_URL }}   # トークン込みのダウンロード URL
+          ODPT_TOKEN: ${{ secrets.ODPT_TOKEN }}
+          GTFS_DATE: ${{ steps.find.outputs.date }}
         run: |
-          if [ -z "$ODPT_GTFS_URL" ]; then
-            echo "::error::Secret ODPT_GTFS_URL が設定されていません"; exit 1
+          if [ -z "$ODPT_TOKEN" ]; then
+            echo "::error::Secret ODPT_TOKEN が設定されていません"; exit 1
           fi
-          curl -sSL --fail --retry 3 -o keio_bus.zip "$ODPT_GTFS_URL"
+          URL="https://api.odpt.org/api/v4/files/odpt/KeioBus/AllLines.zip?date=${GTFS_DATE}&acl:consumerKey=${ODPT_TOKEN}"
+          STATUS=$(curl -sSL --retry 3 -o keio_bus.zip -w "%{http_code}" "$URL")
+          echo "HTTP $STATUS（版 ${GTFS_DATE}）"
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::ダウンロードに失敗しました（HTTP $STATUS）。トークンか版の日付を確認してください"; exit 1
+          fi
           ls -la keio_bus.zip
           unzip -l keio_bus.zip | head -20
 
-      - name: 8 方向分を抽出して JSON を生成
+      - name: 抽出して JSON を生成
         run: python3 scripts/extract.py keio_bus.zip
 
       - name: 変更があればコミット
@@ -46,5 +86,5 @@ jobs:
           git config user.name  "timetable-bot"
           git config user.email "timetable-bot@users.noreply.github.com"
           git add data/timetable.json
-          git commit -m "時刻表を更新 ($(date -u +%Y-%m-%d))"
+          git commit -m "時刻表を更新（ODPT ${{ steps.find.outputs.date }} 版）"
           git push
