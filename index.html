@@ -70,6 +70,7 @@
   .info .item { display: inline-flex; align-items: baseline; gap: 8px; white-space: nowrap; }
   .info .item b { color: var(--ink); font-weight: 700; font-size: 20px; }
   .info .item .lbl { font-size: 14px; color: var(--muted); }
+  .info .gomi { white-space: normal; flex-wrap: wrap; }
   .info .gomi b { color: #fff; background: var(--ink-2); border-radius: 8px; padding: 3px 10px; font-size: 17px; }
   .info .gomi.none { color: var(--muted); }
 
@@ -276,8 +277,10 @@
   // 令和8年度カレンダーより。年度が替わったら validUntil と規則を見直す。
   const GOMI = {
     validUntil: "20270331",
-    byDow: { 1: "缶・びん", 2: "燃やせるごみ", 4: "プラスチック・粗大ごみ", 5: "燃やせるごみ" },   // 0=日 … 6=土
-    wednesday: { 1: "新聞・古布", 2: "燃やせないごみ", 3: "新聞・古布", 4: "燃やせないごみ", 5: null }, // 第n水曜
+    // カレンダー注記どおり「一緒に出せるもの」まで含めて表示する
+    byDow: { 1: "缶・びん・ペットボトル・雑誌・雑紙", 2: "燃やせるごみ", 4: "プラスチック・粗大ごみ", 5: "燃やせるごみ" },   // 0=日 … 6=土
+    wednesday: { 1: "新聞・古布・小型家電・金属類", 2: "燃やせないごみ・有害性ごみ・ダンボール",
+                 3: "新聞・古布・小型家電・金属類", 4: "燃やせないごみ・有害性ごみ・ダンボール", 5: null }, // 第n水曜
     off: ["1231", "0101"],   // MMDD：収集なし
   };
   function gomiFor(d) {
