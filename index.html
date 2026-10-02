@@ -126,8 +126,11 @@
   .card .wait b { font-size: clamp(26px, 3.9vw, 40px); font-weight: 700; color: var(--ink); line-height: 1; }
   .card.soon .wait b, .card.soon .next { color: var(--soon); }
   .card .badges { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
-  .card .after { grid-column: 1 / -1; font-size: 17px; color: var(--muted); white-space: nowrap; overflow: hidden; }
-  .card .after .t + .t::before { content: "／"; color: var(--line); margin: 0 6px; }
+  .card .arr { display: inline-block; font-size: 15px; font-weight: 700; color: var(--ink); white-space: nowrap; align-self: center; margin-left: 2px; }
+  /* その後の便：発車時刻の下に到着時刻を小さく添える */
+  .card .after { grid-column: 1 / -1; display: flex; gap: 0 20px; color: var(--muted); overflow: hidden; margin-top: 2px; }
+  .card .after .t { display: flex; flex-direction: column; font-size: 17px; line-height: 1.25; white-space: nowrap; }
+  .card .after .t small { font-size: 13px; color: var(--muted); }
   .card.none .next { font-size: 24px; font-weight: 500; color: var(--muted); align-self: center; white-space: normal; }
 
   /* ---------- フッター ---------- */
@@ -152,6 +155,7 @@
   .hour .m span.past { color: var(--muted); }
   .hour .m span.next { color: var(--soon); font-weight: 700; }
   .hour .m span i { font-style: normal; font-size: 11px; color: var(--muted); margin-left: 2px; vertical-align: top; }
+  .hour .m span .a { display: block; font-size: 11px; font-weight: 400; color: var(--muted); line-height: 1.2; }
 
   @media (prefers-reduced-motion: reduce) { .card:active { transform: none; } }
 </style>
@@ -246,7 +250,7 @@
       body += wait === 0 ? `<div class="wait"><b>まもなく</b></div>`
             : `<div class="wait">あと <b>${wait}</b> 分</div>`;
       body += `<div class="badges"><span class="line">羽田第3T発</span><span class="plat">多摩センター ${hhmm(next[1])} 着</span></div>`;
-      body += `<div class="after">${upcoming.slice(1,3).map(([d])=>`<span class="t">${hhmm(d)}</span>`).join("") || ""}</div>`;
+      body += `<div class="after">${upcoming.slice(1,3).map(([d, a])=>`<span class="t">${hhmm(d)}<small>${hhmm(a)}着</small></span>`).join("") || ""}</div>`;
     }
     el.innerHTML = `
       <div class="route"><b>羽田空港</b><span class="arrow">→</span>多摩センター駅
@@ -433,6 +437,8 @@
   }
 
   const hhmm = m => `${pad(Math.floor(m / 60) % 24)}:${pad(m % 60)}`;
+  // 到着時刻（時刻表上の予定）。所要時間データが無い古い JSON では空にする
+  const arrOf = t => (typeof t.d === "number" ? hhmm(t.t + t.d) : "");
 
   // ---------- 描画 ----------
   function render() {
@@ -520,9 +526,10 @@
       body += wait === null ? `<div class="wait"></div>`
             : wait === 0 ? `<div class="wait"><b>まもなく</b></div>`
             : `<div class="wait">あと <b>${wait}</b> 分</div>`;
-      const badges = (n.r ? `<span class="line">${n.r}</span>` : "") + (n.p ? `<span class="plat">${n.p}番乗り場</span>` : "");
+      const badges = (n.r ? `<span class="line">${n.r}</span>` : "") + (n.p ? `<span class="plat">${n.p}番乗り場</span>` : "")
+                   + (arrOf(n) ? `<span class="arr">${arrOf(n)}着</span>` : "");
       if (badges) body += `<div class="badges">${badges}</div>`;
-      body += `<div class="after">${rest.slice(0, 3).map(t => `<span class="t">${hhmm(t.t)}</span>`).join("") || `<span class="t">次はありません</span>`}</div>`;
+      body += `<div class="after">${rest.slice(0, 3).map(t => `<span class="t">${hhmm(t.t)}${arrOf(t) ? `<small>${arrOf(t)}着</small>` : ""}</span>`).join("") || `<span class="t">次はありません</span>`}</div>`;
     }
     card.innerHTML = body;
     card.addEventListener("click", e => { if (e.target.closest(".loc")) return; openDialog(dir, trips, nowMin, baseDate); });
@@ -552,7 +559,7 @@
     for (const [h, list] of byHour) {
       const row = document.createElement("div"); row.className = "hour";
       row.innerHTML = `<div class="h">${pad(h % 24)}</div><div class="m">${
-        list.map(t => `<span class="${t.cls}">${pad(t.t % 60)}${multiRoute && t.r ? `<i>${t.r}</i>` : ""}${multiPlat && t.p ? `<i>${t.p}番</i>` : ""}</span>`).join("")}</div>`;
+        list.map(t => `<span class="${t.cls}">${pad(t.t % 60)}${multiRoute && t.r ? `<i>${t.r}</i>` : ""}${multiPlat && t.p ? `<i>${t.p}番</i>` : ""}${arrOf(t) ? `<span class="a">${arrOf(t)}着</span>` : ""}</span>`).join("")}</div>`;
       body.appendChild(row);
     }
     openDirId = dir.id;
