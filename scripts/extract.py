@@ -37,6 +37,7 @@ DIRECTIONS = [
     {"id": "kaidori_park_to_karakida_via_tc", "origin": "貝取北公園通り", "dest": "唐木田駅", "station": "唐木田駅", "role": "out",
      "via": "多摩センター駅", "max_wait": 30, "only": ["東西線"], "label": "多摩センター乗継"},
     {"id": "karakida_to_kaidori_elem",   "origin": "唐木田駅",       "dest": "貝取小学校",   "station": "唐木田駅",     "role": "home"},
+    {"id": "karakida_to_tamacenter",     "origin": "唐木田駅",       "dest": "多摩センター駅", "station": "唐木田駅",     "role": "home", "only": ["東西線"]},
 ]
 
 OUTPUT = Path(__file__).resolve().parent.parent / "data" / "timetable.json"
@@ -124,7 +125,7 @@ def main():
                               "v": {"n": d["via"].replace("駅", ""), "a": arr1, "t": b["t"], "r": b["r"], "p": b["p"]}})
             dropped = 0
         else:
-            found, dropped = collect(d["origin"], d["dest"], d.get("exclude", ()))
+            found, dropped = collect(d["origin"], d["dest"], d.get("exclude", ()), d.get("only", ()))
         for t in found: used_services.add(t["s"])
         found.sort(key=lambda x: (x["s"], x["t"]))
         print(f"{d['origin']} → {d['dest']}" + (f"（{d['via']}乗継）" if d.get("via") else "") + f": {len(found)} 便" + (f"（遠回り {dropped} 便を除外）" if dropped else ""))
